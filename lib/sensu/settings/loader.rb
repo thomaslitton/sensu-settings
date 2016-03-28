@@ -27,10 +27,10 @@ module Sensu
       # @return [Hash] settings.
       def default_settings
         default = {
-          :transport => {
-            :name => "rabbitmq",
-            :reconnect_on_error => true
-          }
+            :transport => {
+                :name => "rabbitmq",
+                :reconnect_on_error => true
+            }
         }
         CATEGORIES.each do |category|
           default[category] = {}
@@ -92,29 +92,33 @@ module Sensu
           begin
             warning("loading config file", :file => file)
             contents = read_config_file(file)
-            config = MultiJson.load(contents, :symbolize_keys => true)
-            merged = deep_merge(@settings, config)
-            unless @loaded_files.empty?
-              changes = deep_diff(@settings, merged)
-              warning("config file applied changes", {
-                :file => file,
-                :changes => changes
-              })
-            end
-            @settings = merged
-            @indifferent_access = false
+            load_contents(contents, file)
             @loaded_files << file
           rescue MultiJson::ParseError => error
             warning("config file must be valid json", {
-              :file => file,
-              :error => error.to_s
-            })
+                                                        :file => file,
+                                                        :error => error.to_s
+                                                    })
             warning("ignoring config file", :file => file)
           end
         else
           warning("config file does not exist or is not readable", :file => file)
           warning("ignoring config file", :file => file)
         end
+      end
+
+      def load_contents(contents, src)
+        config = MultiJson.load(contents, :symbolize_keys => true)
+        merged = deep_merge(@settings, config)
+        unless @loaded_files.empty?
+          changes = deep_diff(@settings, merged)
+          warning("config file applied changes", {
+             :file => src,
+             :changes => changes
+         })
+        end
+        @settings = merged
+        @indifferent_access = false
       end
 
       # Load settings from files in a directory. Files may be in
@@ -127,6 +131,29 @@ module Sensu
         Dir.glob(File.join(path, "**{,/*/**}/*.json")).uniq.each do |file|
           load_file(file)
         end
+      end
+
+      def load_endpoint(endpoint, user=nil, pass=nil)
+        warning("Loading config from endpoint", :endpoint => endpoint)
+        response = get_response(endpoint, user, pass)
+        if response.kind_of? Net::HTTPSuccess
+          #TODO: Store to cache version
+          load_contents response.body, endpoint
+        else
+
+          #TODO:  Add load from cached version
+        end
+      end
+
+      def get_response(endpoint, user, pass)
+        uri = URI.parse(endpoint)
+
+        req = Net::HTTP::Get.new(uri)
+        req.basic_auth user, pass if user
+        Net::HTTP.start(uri.hostname, uri.port, :use_ssl => uri.scheme == 'https') {|http|
+          return http.request(req)
+        }
+
       end
 
       # Set Sensu settings related environment variables. This method
@@ -291,13 +318,13 @@ module Sensu
         merged = hash_one.dup
         hash_two.each do |key, value|
           merged[key] = case
-          when hash_one[key].is_a?(Hash) && value.is_a?(Hash)
-            deep_merge(hash_one[key], value)
-          when hash_one[key].is_a?(Array) && value.is_a?(Array)
-            hash_one[key].concat(value).uniq
-          else
-            value
-          end
+                          when hash_one[key].is_a?(Hash) && value.is_a?(Hash)
+                            deep_merge(hash_one[key], value)
+                          when hash_one[key].is_a?(Array) && value.is_a?(Array)
+                            hash_one[key].concat(value).uniq
+                          else
+                            value
+                        end
         end
         merged
       end
@@ -336,7 +363,7 @@ module Sensu
         file_name = "sensu_#{sensu_service_name}_loaded_files"
         path = File.join(dir, file_name)
         File.open(path, "w") do |file|
-          file.write(@loaded_files.join(":"))
+          file.write(@loaded_files.join(File::PATH_SEPARATOR))
         end
         path
       end
@@ -364,7 +391,7 @@ module Sensu
       # @return [Array] current warnings.
       def warning(message, data={})
         @warnings << {
-          :message => message
+            :message => message
         }.merge(data)
       end
     end

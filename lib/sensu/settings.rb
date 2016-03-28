@@ -24,6 +24,11 @@ module Sensu
             @loader.load_directory(directory)
           end
         end
+
+        if options[:endpoint]
+          @loader.load_endpoint(options[:endpoint], options[:endpoint_user], options[:endpoint_pass])
+        end
+
         @loader.set_env!
         @loader
       end

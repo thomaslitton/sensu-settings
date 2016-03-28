@@ -1,5 +1,7 @@
 require File.join(File.dirname(__FILE__), "helpers")
 require "sensu/settings"
+require 'webmock/rspec'
+
 
 describe "Sensu::Settings" do
   include Helpers
@@ -40,7 +42,7 @@ describe "Sensu::Settings" do
     expect(settings[:checks][:nested][:command]).to eq("true")
     expect(ENV["SENSU_LOADED_TEMPFILE"]).to match(/sensu_rspec_loaded_files/)
     loaded_files = IO.read(ENV["SENSU_LOADED_TEMPFILE"])
-    expect(loaded_files.split(":")).to eq(settings.loaded_files)
+    expect(loaded_files.split(File::PATH_SEPARATOR)).to eq(settings.loaded_files)
     ENV["RABBITMQ_URL"] = nil
   end
 
@@ -48,5 +50,27 @@ describe "Sensu::Settings" do
     settings = Sensu::Settings.load(:config_dirs => [@config_dir, @app_dir])
     expect(settings[:checks][:merger][:command]).to eq("echo -n merger")
     expect(settings[:checks][:app_http_endpoint][:command]).to eq("check-http.rb -u https://localhost/ping -q pong")
+  end
+
+  it "can load settings from directories and endpoint" do
+    checkContent = '{
+      "checks": {
+        "http": {
+          "command": "true",
+          "subscribers": [
+            "test"
+          ],
+          "interval": 30
+        }
+      }
+    }';
+
+    endpoint = "http://localhost/servers/settings"
+    stub_request(:get, endpoint).to_return(:body => checkContent)
+
+    settings = Sensu::Settings.load(:config_dir => @config_dir, :endpoint => endpoint)
+
+    expect(settings[:checks][:http][:command]).to eq("true")
+
   end
 end
